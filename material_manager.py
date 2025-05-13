@@ -4,9 +4,14 @@ import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
+from datetime import datetime
+import logging
 from utils import resource_path, extract_number, normalize_path
 from file_reader import try_read_file
 
+# Configure logging
+logging.basicConfig(filename='material_manager.log', level=logging.ERROR,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 class MaterialManager:
     def __init__(self, base_dir):
@@ -18,7 +23,7 @@ class MaterialManager:
 
     def load_materials(self):
         json_file = resource_path("materials.json")
-        supported_extensions = ('.txt', '.pdf', '.docx', '.md', '.log')
+        supported_extensions = ('.txt', '.pdf', '.docx', '.doc', '.md', '.log')
 
         for category in self.materials:
             self.materials[category] = []
@@ -42,6 +47,7 @@ class MaterialManager:
                                 key=lambda x: extract_number(os.path.basename(x))
                             )
             except Exception as e:
+                logging.error(f"Failed to load materials from JSON: {e}")
                 messagebox.showerror("Ошибка", f"Не удалось загрузить материалы из JSON: {e}")
 
         for category in self.materials:
@@ -62,6 +68,7 @@ class MaterialManager:
                     key=lambda x: extract_number(os.path.basename(x))
                 )
             except Exception as e:
+                logging.error(f"Failed to load materials from {category_dir}: {e}")
                 messagebox.showerror("Ошибка", f"Не удалось загрузить материалы из {category_dir}: {e}")
 
         self.save_materials()
@@ -72,11 +79,79 @@ class MaterialManager:
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(self.materials, f, ensure_ascii=False, indent=4)
         except Exception as e:
+            logging.error(f"Failed to save materials: {e}")
             messagebox.showerror("Ошибка", f"Не удалось сохранить материалы: {e}")
 
+    def add_literature_list(self):
+        category = "Список литературы"
+        category_dir = os.path.join(self.materials_base_dir, category)
+        os.makedirs(category_dir, exist_ok=True)
+
+        # Literature list content in Markdown
+        literature_content = """# НЕОБХОДИМЫЕ РЕСУРСЫ
+
+## Основная литература
+- "Кибербезопасность. Руководство для начинающих". Автор: Юрий Диогенес, Эрдаль Озкайя
+- "Kali Linux: Тестирование на проникновение". Автор: Уильям Поллак
+- "Информационная безопасность. Защита и нападение". Автор: Андрей Бирюков
+- "Компьютерные сети. Принципы, технологии, протоколы". Автор: Уильям Столлингс
+- "Искусственный интеллект в кибербезопасности". Автор: Абхишек Дубей
+- "Программная безопасность: Технические подходы к защите". Автор: Гэри Макгроу
+- "Практическая криптография". Автор: Брюс Шнайер
+- "Хакинг: Искусство эксплойта". Автор: Джон Эриксон
+- "Мобильная безопасность: руководство разработчика". Автор: Доминик Шейн
+- "Безопасность веб-приложений". Автор: Иван Ристич
+- "Обнаружение атак в реальном времени". Автор: Кристофер Сандерс
+- "Linux для хакеров". Автор: Джошуа Д. Картрайт
+- "Реверс-инжиниринг программного обеспечения". Автор: Эльдар Шейнов
+- "Этика хакера". Автор: Кевин Митник
+- "Современные угрозы и защита от них". Автор: Маркус Ранум
+
+## Электронные ресурсы
+- **Coursera**: Курсы по кибербезопасности от ведущих университетов (Stanford, IBM): [coursera.org](https://coursera.org)
+- **edX**: Курсы по кибербезопасности, включая основы разработки безопасного ПО: [edx.org](https://edx.org)
+- **Udemy**: Практические курсы по этическому хакингу, защите данных и разработке защищенного ПО: [udemy.com](https://udemy.com)
+- **Cisco Networking Academy**: Программы обучения сетевой безопасности и разработке защитных решений: [cisco.com](https://www.cisco.com)
+- **Springer Link**: Научные статьи и книги по кибербезопасности: [springer.com](https://link.springer.com)
+"""
+
+        # Create temporary file
+        temp_file = resource_path("temp_literature_list.md")
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(literature_content)
+
+            # Generate unique filename
+            base_name = "literature_list"
+            ext = ".md"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            new_file_name = f"{base_name}_{timestamp}{ext}"
+            new_path = os.path.join(category_dir, new_file_name)
+
+            # Copy file
+            shutil.copy2(temp_file, new_path)
+            norm_path = normalize_path(new_path, self.materials_base_dir)
+
+            # Add to materials if not present
+            if norm_path not in {normalize_path(p, self.materials_base_dir) for p in self.materials[category]}:
+                self.materials[category].append(new_path)
+                self.materials[category] = sorted(
+                    self.materials[category],
+                    key=lambda x: extract_number(os.path.basename(x))
+                )
+                self.save_materials()
+
+            # Clean up temporary file
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+
+            return True, f"Литература успешно добавлена в '{category}'!"
+        except Exception as e:
+            logging.error(f"Failed to add literature list: {e}")
+            return False, f"Не удалось добавить литературу: {e}"
 
 def add_material(app):
-    from ui_components import view_materials  # Moved import here to avoid circular dependency
+    from ui_components import view_materials
     app.clear_content()
     header_frame = tk.Frame(app.content_frame, bg="#2D2D44", height=40, bd=1, relief=tk.RAISED)
     header_frame.pack(fill=tk.X, pady=(0, 10))
@@ -124,23 +199,21 @@ def add_material(app):
               font=(app.font_family, 12, 'bold'),
               relief=tk.FLAT, bd=0).pack(pady=10, ipadx=20, ipady=5)
 
-
 def select_file(file_label, file_path):
     selected_file = filedialog.askopenfilename(
-        filetypes=[("All supported files", "*.txt *.pdf *.docx *.md *.log"),
+        filetypes=[("All supported files", "*.txt *.pdf *.docx *.doc *.md *.log"),
                    ("Text files", "*.txt *.md *.log"),
                    ("PDF files", "*.pdf"),
-                   ("Word files", "*.docx"),
+                   ("Word files", "*.docx *.doc"),
                    ("All files", "*.*")])
     if selected_file:
         file_path[0] = selected_file
         file_label.config(text=os.path.basename(selected_file))
 
-
 def save_material(app, category, file_path):
-    from ui_components import view_materials  # Moved import here to avoid circular dependency
-    if not category:
-        messagebox.showerror("Ошибка", "Выберите категорию!")
+    from ui_components import view_materials
+    if not category or category not in app.material_manager.materials:
+        messagebox.showerror("Ошибка", "Выберите действительную категорию!")
         return
     if not file_path or not os.path.exists(file_path):
         messagebox.showerror("Ошибка", "Выберите существующий файл!")
@@ -149,22 +222,15 @@ def save_material(app, category, file_path):
     category_dir = os.path.join(app.material_manager.materials_base_dir, category)
     os.makedirs(category_dir, exist_ok=True)
 
-    # Generate a unique file name to avoid conflicts
+    # Generate a unique file name
     base_name, ext = os.path.splitext(os.path.basename(file_path))
-    new_file_name = os.path.basename(file_path)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    new_file_name = f"{base_name}_{timestamp}{ext}"
     new_path = os.path.join(category_dir, new_file_name)
-    counter = 1
-    while os.path.exists(new_path):
-        new_file_name = f"{base_name}_{counter}{ext}"
-        new_path = os.path.join(category_dir, new_file_name)
-        counter += 1
 
     try:
-        # Copy the file to the category directory
-        shutil.copy2(file_path, new_path)  # Use copy2 to preserve metadata
+        shutil.copy2(file_path, new_path)
         norm_path = normalize_path(new_path, app.material_manager.materials_base_dir)
-
-        # Add to materials list if not already present
         if norm_path not in {normalize_path(p, app.material_manager.materials_base_dir) for p in
                              app.material_manager.materials[category]}:
             app.material_manager.materials[category].append(new_path)
@@ -173,15 +239,14 @@ def save_material(app, category, file_path):
                 key=lambda x: extract_number(os.path.basename(x))
             )
             app.material_manager.save_materials()
-
         messagebox.showinfo("Успех", f"Материал '{new_file_name}' успешно добавлен в категорию '{category}'!")
-        view_materials(app)  # Navigate to materials view instead of reloading add_material
+        view_materials(app)
     except Exception as e:
+        logging.error(f"Failed to save material {file_path}: {e}")
         messagebox.showerror("Ошибка", f"Не удалось сохранить файл: {e}")
 
-
 def view_document(app, filepath, right_panel, refresh=False):
-    from ui_components import view_materials  # Moved import here to avoid circular dependency
+    from ui_components import view_materials
     if not refresh:
         app.current_document_path = filepath
         app.current_document_panel = right_panel
@@ -198,7 +263,10 @@ def view_document(app, filepath, right_panel, refresh=False):
 
         control_frame = tk.Frame(right_panel, bg=app.bg_color)
         control_frame.pack(fill=tk.X, pady=5)
-        tk.Label(control_frame, text=os.path.basename(filepath),
+        # Remove .pdf, .docx, .doc extensions from header
+        base_name, ext = os.path.splitext(os.path.basename(filepath))
+        display_name = base_name if ext.lower() in ['.pdf', '.docx', '.doc'] else os.path.basename(filepath)
+        tk.Label(control_frame, text=display_name,
                  font=(app.font_family, 16, 'bold'), fg=app.text_color, bg=app.bg_color).pack(side=tk.LEFT, padx=10)
         tk.Button(control_frame, text="Назад",
                   command=lambda: view_materials(app),
@@ -313,7 +381,6 @@ def view_document(app, filepath, right_panel, refresh=False):
         content, images, error = try_read_file(filepath)
         display_content(content, images, error)
 
-
 def show_full_image(app, image_path):
     try:
         img = Image.open(image_path)
@@ -330,8 +397,8 @@ def show_full_image(app, image_path):
         tk.Label(top, image=photo).pack()
         top.image = photo
     except Exception as e:
+        logging.error(f"Failed to open image {image_path}: {e}")
         messagebox.showerror("Ошибка", f"Не удалось открыть изображение: {e}")
-
 
 def async_read_file(app, filepath, callback):
     def read_file():
